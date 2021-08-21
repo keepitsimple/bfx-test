@@ -1,0 +1,29 @@
+{
+  "name": "bfx",
+  "version": "1.0.0",
+  "description": "test for bfx",
+  "main": "index.js",
+  "author": "Roman Podlinov",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.17 <15"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "start-grapes": "node start_grapes.js"
+  },
+  "dependencies": {
+    "async": "^3.2.1",
+    "grenache-grape": "^0.9.10",
+    "grenache-nodejs-http": "^0.7.12",
+    "grenache-nodejs-link": "^0.7.12"
+  },
+  "devDependencies": {
+    "eslint": "^7.32.0",
+    "eslint-config-standard": "^16.0.3",
+    "eslint-plugin-import": "^2.24.1",
+    "eslint-plugin-node": "^11.1.0",
+    "eslint-plugin-promise": "^5.1.0",
+    "eslint-plugin-standard": "^5.0.0"
+  }
+}
