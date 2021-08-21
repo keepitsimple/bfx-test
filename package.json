@@ -16,7 +16,8 @@
     "async": "^3.2.1",
     "grenache-grape": "^0.9.10",
     "grenache-nodejs-http": "^0.7.12",
-    "grenache-nodejs-link": "^0.7.12"
+    "grenache-nodejs-link": "^0.7.12",
+    "lodash.findkey": "^4.6.0"
   },
   "devDependencies": {
     "eslint": "^7.32.0",

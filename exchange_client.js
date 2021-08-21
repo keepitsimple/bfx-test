@@ -1,5 +1,6 @@
 const async = require('async')
 const Link = require('grenache-nodejs-link')
+const findKey = require('lodash.findkey');
 const {PeerRPCServer, PeerRPCClient} = require('grenache-nodejs-http')
 const {generateUniqId} = require('./utils')
 
@@ -22,9 +23,6 @@ class ExchangeClient {
         this._completedOrders = {}
         // list of queues per order id
         this._processingQueue = {}
-
-        // TODO rename client to seller & buyer
-
 
         this._link = new Link({
             grape: grapeUrl
@@ -57,11 +55,13 @@ class ExchangeClient {
 
 
     broadcastOrder({type, amount, code, price}, cb) {
+        type = type.toLowerCase()
+        code = code.toUpperCase()
         const payload = {
             event: 'new',
             data: {
                 id: generateUniqId(),
-                client: this._id,
+                seller: this._id,
                 type,
                 amount,
                 code,
@@ -91,11 +91,13 @@ class ExchangeClient {
         }
 
         handler.reply(null, true)
-
+        if (!this._processingQueue[data.id]) {
+            this._processingQueue[data.id] = []
+        }
         this._processingQueue[data.id].push(data)
         if (!order.flags.inProcess) {
             order.flags.inProcess = true
-            this.processQueue(rid, (err, approved) => {
+            this.processQueue(rid, data.id, (err, approved) => {
                 // err will never have a value here
                 if (err) {
                     throw err
@@ -121,45 +123,61 @@ class ExchangeClient {
             // The client has no interest in the offer, most probably an error
             return handler.reply(new Error('Client has no interest in the offer'))
         }
-        console.log(`Your propose for order:${data.id} from client:${data.client} was accepted`)
+        console.log(`Your propose for order:${data.id} from seller:${data.seller} was accepted`)
         delete this._incomingOrders[data.id]
         handler.reply()
     }
 
     handleOrderNew(rid, data, handler) {
-        // Exclude own orders
-        if (data.client === this._id) return
         handler.reply()
-        console.log(`Received new order:${data.id} from client:${data.client}`)
+        // Exclude own orders
+        if (data.seller === this._id) {
+
+            return
+        }
+        console.log(rid, `Received new order:${data.id} from seller:${data.seller} checking our orders...`)
+        const matchingKeyOrder = findKey(this._sentOrders, ({ contents }) => {
+            if (contents.code === data.code && contents.price === data.price && contents.amount === data.amount &&
+                ((contents.type === 'sell' && data.type === 'buy') || (contents.type === 'buy' && data.type === 'sell'))
+            ) {
+                return true
+            }
+            return false
+        })
+        if(!matchingKeyOrder) {
+            console.log(rid, `No matching orders.`)
+            return
+        }
+        console.log(rid, `Found matched order.`)
         this._incomingOrders[data.id] = data
         // Send an acceptance
         const payload = {
             event: 'accept',
             data: {
                 id: data.id,
-                client: data.client,
-                from: this._id
+                seller: data.seller,
+                buyer: this._id
             }
         }
-        this._clientPeer.request(ClientPrefix + data.client, payload, this._requestOptions, (err, res) => {
+        this._clientPeer.request(ClientPrefix + data.seller, payload, this._requestOptions, (err, res) => {
+            if (err) {
+                console.log(rid, `Cannot send propose to the seller:${data.seller}`)
+                console.log(rid, 'Reason:', err.message)
+                return
+            }
             if (res) {
-                console.log('Acceptance has been received', data.client, rid)
+                console.log(rid, `Propose has been received by seller:${data.seller}`)
                 return
             }
 
             delete this._incomingOrders[data.id]
-            if (err) {
-                console.log('Failed to accept the offer of', data.client, rid)
-                console.log('Reason:', err.message, rid)
-                return
-            }
-            console.log('Offer is already accepted', rid)
+            console.log(rid, 'Offer is already accepted')
         })
     }
 
     handleOrderClosed(rid, data, handler) {
-        delete this._incomingOrders[data.id]
         handler.reply()
+        delete this._incomingOrders[data.id]
     }
 
     handleRequest(rid, key, payload, handler) {
@@ -181,25 +199,24 @@ class ExchangeClient {
 
     processQueue(rid, id, cb) {
         const processAcceptance = () => {
-            const acceptCmdBody = this._processingQueue[id].shift()
-            if (acceptCmdBody) {
+            const proposal = this._processingQueue[id].shift()
+            if (proposal) {
                 const payload = {
                     event: 'approved',
                     data: {
-                        id: acceptCmdBody.id,
-                        client: acceptCmdBody.client,
-                        from: acceptCmdBody.from
+                        id: proposal.id,
+                        seller: proposal.seller,
+                        buyer: proposal.buyer
                     }
                 }
-                // Hopefully this always acts asynchronously. Otherwise, will need to use setImmediate
-                console.log('Notifying approved person', acceptCmdBody.from, rid)
-                this._clientPeer.request(ClientPrefix + acceptCmdBody.from, payload, this._requestOptions, err => {
+                console.log(rid, `Notifying buyer:${proposal.buyer} about accept`)
+                this._clientPeer.request(ClientPrefix + proposal.buyer, payload, this._requestOptions, err => {
                     if (err) {
                         // On a failure we move to the next acceptance
-                        console.log('Failed to approve for', acceptCmdBody.from, rid)
+                        console.log(rid, `Failed to approve for buyer: ${proposal.buyer}`)
                         return processAcceptance()
                     }
-                    console.log('Approved for', acceptCmdBody.from, rid)
+                    console.log('Approved for', proposal.from, rid)
                     cb(null, true)
                 })
             } else {
@@ -227,8 +244,6 @@ class ExchangeClient {
                 cb => this._link.announce(BroadcastKey, this._service.port, {}, cb)
             ],
             (err) => {
-
-
                 if (!err) {
                     this._interval = setInterval(() => {
                         this._link.announce(ClientPrefix + this._id, this._service.port, {})
