@@ -26,8 +26,12 @@ client.start((err) => {
 
     if(order) {
         const [ type, amount, label, price] = order.split(':')
+        console.log('There is an order:', order)
         // TODO implement normal validation via RegEx or validator
-        if(!type || !amount || !label || !price)
+        if(!type || !amount || !label || !price){
+            console.log('Invalid order. Use format like "buy:0.1:btcusd:10000"')
+            process.exit(1)
+        }
         client.broadcastOrder( { type, amount, label, price }, (err) =>{
           if(err) {
             console.log(err, 'Cannot set order. Error:', err)
