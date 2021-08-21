@@ -1,4 +1,4 @@
 module.exports = {
-    announceInterval: 1000,
+    announceInterval: 5000,
     protocol: 'http://'
 }

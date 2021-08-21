@@ -29,9 +29,14 @@ Client actions:
 - create orderbook for client
 - submit order (BUY / SELL, amount) from client; match order with orders from other clients
 
-Order commands: 
-buy amount
-sell amount
+### Orders 
+- buy amount code price
+- sell amount code price
+ 
+### Order statuses
+- `new` - Client created a new order
+- `closed` - Order closed by match
+
 
 
 ## How to start
@@ -51,4 +56,4 @@ yarn start-client 1002 buy:0.1:btcusd:10000
 yarn start-client 1003 sell:0.1:btcusd:10000
 ```
 - PORT - any available local port ; it's preferred to use value > 1000
-- ORDER - optional argument. Format - [buy|sell]:[amount]:[label]:[price]
+- ORDER - optional argument. Format - [buy|sell]:[amount]:[code]:[price]

@@ -1,12 +1,12 @@
 const async = require('async')
 const Link = require('grenache-nodejs-link')
-const { PeerRPCServer, PeerRPCClient } = require('grenache-nodejs-http')
-const { generateUniqId } = require('./utils')
+const {PeerRPCServer, PeerRPCClient} = require('grenache-nodejs-http')
+const {generateUniqId} = require('./utils')
 
 const BroadcastKey = 'all'
 
 class ExchangeClient {
-    constructor(grapeUrl, port, announceInterval = 1000 ) {
+    constructor({ grapeUrl, port, announceInterval = 1000}) {
         this._initialized = false
         this._id = generateUniqId()
         this._port = Number(port)
@@ -16,100 +16,119 @@ class ExchangeClient {
         this._sentOffers = []
 
         this._link = new Link({
-            grape: 'http://127.0.0.1:30001'
-            // grape: grapeUrl
+            grape: grapeUrl
         })
         this._link.start()
         this._clientPeer = new PeerRPCClient(this._link, {})
         this._clientPeer.init()
-        this._serverPeer = new PeerRPCServer(this._link, { timeout: 300000 })
+        this._serverPeer = new PeerRPCServer(this._link, {timeout: 300000})
         this._serverPeer.init()
         this._service = this._serverPeer.transport('server')
         this._service.listen(this._port)
         this._initialized = true
         this._service.on('request', this.handleRequest.bind(this))
-    }
 
-    handleRequest (rid, key, payload, handler) {
-        console.log(payload) //  { msg: 'hello' }
-        handler.reply(null, { msg: 'hello ' + payload.msg  })
-    }
-
-    start (cb = () => {}) {
-        if (!this._initialized) {
-            const err = new Error('OTCClient should be initialized first')
-            if (!cb) {
-                throw err
+        this._orderHandlers = {
+            ['client:' + this._id]: {
+                'accept': this.handleOrderAcceptRequest.bind(this),
+                'accepted': this.handleOrderAccepted.bind(this)
+            },
+            [BroadcastKey]: {
+                'new': this.handleOrderNew.bind(this),
+                'closed': this.handleOrderClosed.bind(this)
             }
-            return cb(err)
         }
 
-        async.parallel(
-          [
-              cb => this._link.announce('client:'+ this._id, this._service.port, {}, cb),
-              cb => this._link.announce(BroadcastKey, this._service.port, {}, cb)
-          ],
-          (err) => {
-                console.log('client:'+ this._id, 'started')
 
-                if (!err) {
-                    this._interval = setInterval(() => {
-                        this._link.announce('client:'+ this._id, this._service.port, {})
-                        this._link.announce(BroadcastKey, this._service.port, {})
-                    }, this._announceInterval)
-                }
-                cb(err)
-            }
-        )
-
-
-
-        // this._clientPeer.request('rpc_test', { msg: `client: ${this._id}` }, { timeout: 10000 }, (err, data) => {
-        //     if (err) {
-        //         console.error(err)
-        //         process.exit(-1)
-        //     }
-        //     console.log(data) // { msg: 'world' }
-        // })
     }
 
 
-    broadcastOrder( { type, amount, label, price }, cb) {
+    broadcastOrder({type, amount, code, price}, cb) {
         const payload = {
-            cmd: 'offer:new',
-            body: {
+            event: 'new',
+            data: {
                 id: generateUniqId(),
                 from: this._id,
                 type,
                 amount,
-                label,
+                code,
                 price
             }
         }
-        this._sentOffers[payload.body.offerId] = {
-            contents: payload.body,
+        this._sentOffers[payload.data.id] = {
+            contents: payload.data,
             flags: {
                 inProcess: false,
                 approved: false
             }
         }
         // broadcast to all via map
-        this._clientPeer.map(BroadcastKey, payload, { timeout: 10000 }, cb)
+        this._clientPeer.map(BroadcastKey, payload, {timeout: 10000}, cb)
+    }
 
-        // peer.map('rpc_test', 'hello', { timeout: 10000 }, (err, data) => {
-        //     console.log(err, data)
-        // })
+    handleOrderAcceptRequest(rid, data, handler) {
 
     }
 
+    handleOrderAccepted(rid, data, handler) {
 
-    stop() {
-        if(this._interval){
-            clearInterval(this._interval)
+    }
+
+    handleOrderNew(rid, data, handler) {
+
+    }
+
+    handleOrderClosed(rid, data, handler) {
+
+    }
+
+    handleRequest(rid, key, payload, handler) {
+        console.log(rid, key, payload)
+        const {event, data} = payload
+        if (!event || !data) {
+            handler.reply(new Error('Incorrect message format'))
+            return
+        }
+        const eventHandler = this._orderHandlers[key] && this._orderHandlers[key][event]
+
+        if (!eventHandler) {
+            handler.reply(new Error('Unable to handle the request'))
+            return
         }
 
+        return eventHandler(rid, data, handler)
     }
 
+    start(cb) {
+        if (!this._initialized) {
+            const err = new Error('Client has problem with initialization')
+            return cb(err)
+        }
+
+        async.parallel(
+            [
+                cb => this._link.announce('client:' + this._id, this._service.port, {}, cb),
+                cb => this._link.announce(BroadcastKey, this._service.port, {}, cb)
+            ],
+            (err) => {
+
+
+                if (!err) {
+                    this._interval = setInterval(() => {
+                        this._link.announce('client:' + this._id, this._service.port, {})
+                        this._link.announce(BroadcastKey, this._service.port, {})
+                    }, this._announceInterval)
+                }
+                cb(err)
+            }
+        )
+    }
+
+    stop() {
+        if (this._interval) {
+            clearInterval(this._interval)
+        }
+    }
 
 }
 
